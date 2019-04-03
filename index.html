@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <title>Демо: подключаем d3 в iframe, выполняем пользовательский код</title>
+    <link rel="stylesheet" href="css/style.css">
+  </head>
+  <body>
+    <main class="demo">
+      <div class="demo__item">
+        <div class="vertical-list">
+          <div class="vertical-list__item item">
+            <span class="item__title">HTML</span>
+            <div class="item__inner js-editor-html"></div>
+          </div>
+          <div class="vertical-list__item item">
+            <span class="item__title">JS (D3)</span>
+            <div class="item__inner js-editor-js"></div>
+          </div>
+        </div>
+      </div>
+      <div class="demo__item ">
+        <div class="vertical-list">
+          <div class="vertical-list__item item">
+            <span class="item__title">Превью</span>
+            <div class="item__inner demo__frame-wrapper">
+              <iframe class="demo__frame js-frame-preview"></iframe>
+            </div>
+          </div>
+          <div class="vertical-list__item item">
+            <span class="item__title result">Результат</span>
+            <div class="item__inner demo__frame-wrapper js-frame-containter"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="lib/data/initials.js"></script>
+    <script src="lib/ace/ace.js"></script>
+    <script src="lib/acorn/acorn/dist/acorn.js"></script>
+    <script>
+      window.check = function (userCode) {
+        const ast = acorn.parse(userCode);
+        const body = ast.body;
+
+        const fn = body.filter((node) => node.type === 'FunctionDeclaration')[0];
+        
+        const forStatement = fn.body.body.filter((node) => node.type === 'ForStatement')[0];
+        const ifStatement = forStatement.body.body.filter((node) => node.type === 'IfStatement')[0];
+        const elseCondition = ifStatement.alternate;
+
+        if (!elseCondition) return false;
+
+        const expressionStatement = elseCondition.body.filter((node) => node.type === 'ExpressionStatement')[0];
+        const expr = expressionStatement.expression;
+
+        if (expr.type !== 'UpdateExpression' || expr.operator !== '++' || expr.prefix) return false;
+        
+        const expressionArgument = expr.argument;
+        if (expressionArgument.type !== 'MemberExpression') return false;
+
+        const obj = expressionArgument.object;
+        if (obj.name !== 'counts') return false;
+
+        const prop = expressionArgument.property;
+        if (prop.type !== 'BinaryExpression' || prop.operator !== '-') return false;
+
+        const right = prop.right;
+        
+        if (right.type !== 'Literal' || right.value !== 1) return false;
+        
+        const left = prop.left;
+        if (left.type !== 'MemberExpression') return false;
+
+        const leftObj = left.object;
+        if (leftObj.type !== 'Identifier' || leftObj.name !== 'counts') return false;
+
+        const leftProp = left.property;
+        if (leftProp.type !== 'Identifier' || leftProp.name !== 'length') return false;
+
+        return true;
+      };
+    </script>
+    <script>
+      const htmlEditor = ace.edit(document.querySelector('.js-editor-html'));
+      htmlEditor.session.setMode('ace/mode/html'); // Режим редактора — HTML
+      htmlEditor.session.setTabSize(2);
+      htmlEditor.setValue(window.initialCode.initialHTML);
+      htmlEditor.clearSelection();
+
+      const jsEditor = ace.edit(document.querySelector('.js-editor-js'));
+      jsEditor.session.setMode('ace/mode/javascript'); // Режим редактора — javascript
+      jsEditor.session.setTabSize(2);
+      jsEditor.setValue(window.initialCode.initialJS);
+      jsEditor.clearSelection();
+
+      const result = document.querySelector('.result');
+      
+      const getIframe = () => {
+        const frame = document.createElement('iframe');
+        frame.classList.add('demo__frame');
+        return frame;
+      };
+
+      // Отрисуем превью в айфрейм
+      const previewIframe = document.querySelector('.js-frame-preview');
+      const previewIframeDoc = previewIframe.contentDocument;
+
+      const resultScript = previewIframeDoc.createElement('script');
+      resultScript.textContent = window.initialCode.resultJS;
+      previewIframeDoc.write(window.initialCode.initialHTML);
+      previewIframeDoc.addEventListener('DOMContentLoaded', () => {
+        previewIframeDoc.body.appendChild(resultScript);
+      })
+      previewIframeDoc.close();
+      // Отрисовали
+
+      const frameContainer = document.querySelector('.js-frame-containter');
+
+      const makeChanges = () => {
+        frameContainer.innerHTML = '';
+        
+        const frame = getIframe();
+        frameContainer.appendChild(frame);
+        
+        const doc = frame.contentDocument;
+        
+        const userCode = jsEditor.getValue();
+
+        if (check(userCode)) {
+          result.classList.add('result--result');
+        }; // Проверяем код студента
+        const script = doc.createElement('script');
+        script.textContent = userCode;
+        
+        doc.write(htmlEditor.getValue());
+        doc.addEventListener('DOMContentLoaded', () => {
+          doc.body.appendChild(script);
+        })
+        doc.close();
+      };
+      makeChanges();
+      
+      let interval = null;
+      const onChange = () => {
+        clearInterval(interval);
+        interval = setTimeout(() => {
+          makeChanges();
+        }, 1000);
+      }
+      jsEditor.getSession().on('change', onChange);
+      htmlEditor.getSession().on('change', onChange);
+      </script>
+  </body>
+</html>
